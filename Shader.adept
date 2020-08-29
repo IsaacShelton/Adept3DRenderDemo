@@ -1,0 +1,153 @@
+
+#default get_file_contents_32_bit false
+
+struct Shader (program GLuint, vertex GLuint, fragment GLuint) {
+    func destroy {
+        glDetachShader(this.program, this.vertex)
+        glDetachShader(this.program, this.fragment)
+        glDeleteShader(this.vertex)
+        glDeleteShader(this.fragment)
+        glDeleteProgram(this.program)
+    }
+    
+    func bind {
+        glUseProgram(this.program)
+    }
+    
+    func getUniformLocation(name *ubyte) GLint {
+        return glGetUniformLocation(this.program, name)
+    }
+    
+    func giveBool(uniform *ubyte, value bool) void {
+        glUniform1i(this.getUniformLocation(uniform), value as int);
+    }
+    
+    func giveInt(uniform *ubyte, value bool) void {
+        glUniform1i(this.getUniformLocation(uniform), value);
+    }
+    
+    func giveFloat(uniform *ubyte, value float) void {
+        glUniform1f(this.getUniformLocation(uniform), value);
+    }
+    
+    func giveVector3f(uniform *ubyte, value Vector3f) void {
+        glUniform3f(this.getUniformLocation(uniform), value.x, value.y, value.z);
+    }
+    
+    func giveMatrix4f(uniform *ubyte, matrix Matrix4f) void {
+        glUniformMatrix4fv(this.getUniformLocation(uniform), 1, false, &matrix.array as *float)
+    }
+}
+
+func shader(vertex_filename, fragment_filename String) Shader {
+    vf *ubyte = vertex_filename.cstr()
+    ff *ubyte = fragment_filename.cstr()
+    defer delete vf
+    defer delete ff
+    
+    vc *ubyte = getFileContentsAsNullTerminatedString(vf, def vc_length usize)
+    fc *ubyte = getFileContentsAsNullTerminatedString(ff, def fc_length usize)
+    defer delete vc
+    defer delete fc
+    
+    return shaderWithCode(vc, fc)
+}
+
+func shaderWithCode(vertex_code, fragment_code String) Shader {
+    v *ubyte = vertex_code.cstr()
+    f *ubyte = fragment_code.cstr()
+    defer delete v
+    defer delete f
+    return shaderWithCode(v, f)
+}
+
+func shaderWithCode(vertex_code, fragment_code *ubyte) Shader {
+    shader POD Shader
+    
+    if vertex_code == null || fragment_code == null {
+        fprintf(stderr, 'Shader error: shaderWithCode() called with null value!\n')
+        return shader
+    }
+    
+    log_length int
+    log_message *ubyte
+    status GLint
+
+    shader.vertex = glCreateShader(GL_VERTEX_SHADER)
+    glShaderSource(shader.vertex, 1, &vertex_code, null)
+    glCompileShader(shader.vertex)
+    glGetShaderiv(shader.vertex, GL_COMPILE_STATUS, &status)
+
+    if status == 0 {
+        puts('Failed to compile vertex shader')
+        log_message = malloc(1024)
+        glGetShaderInfoLog(shader.vertex, 1024, &log_length, log_message)
+        if log_length != 0, puts(log_message)
+        free(log_message)
+    }
+
+    shader.fragment = glCreateShader(GL_FRAGMENT_SHADER)
+    glShaderSource(shader.fragment, 1, &fragment_code, null)
+    glCompileShader(shader.fragment)
+    glGetShaderiv(shader.fragment, GL_COMPILE_STATUS, &status)
+
+    if status == 0 {
+        puts('Failed to compile fragment shader')
+        log_message = malloc(1024)
+        glGetShaderInfoLog(shader.fragment, 1024, &log_length, log_message)
+        if log_length != 0, puts(log_message)
+        free(log_message)
+    }
+
+    shader.program = glCreateProgram()
+    glAttachShader(shader.program, shader.vertex)
+    glAttachShader(shader.program, shader.fragment)
+    glLinkProgram(shader.program)
+    glValidateProgram(shader.program)
+    return shader
+}
+
+#unless get_file_contents_32_bit
+    #if __windows__
+        foreign fseeko64(*FILE, long, int) int
+        foreign ftello64(*FILE) long
+    #else
+        import 'unix/off_t.adept'
+        foreign fseeko(*FILE, off_t, int) int
+        foreign ftello(*FILE) off_t
+    #end
+#end
+
+func getFileContentsAsNullTerminatedString(in filename *ubyte, out size *usize) *ubyte {
+    // NOTE: Only works for files smaller than ~4GB
+    // NOTE: Might work with files larger than ~4GB now, haven't tested yet
+    
+    
+    buffer *ubyte = null
+    length long = undef
+    f *FILE = fopen(filename, 'r')
+    unless f, return null
+    defer fclose(f)
+    
+    #if get_file_contents_32_bit
+        fseek(f, 0, SEEK_END)
+        length = ftell(f)
+        fseek(f, 0, SEEK_SET)
+    #elif __windows__
+        fseeko64(f, 0, SEEK_END)
+        length = ftello64(f)
+        fseeko64(f, 0, SEEK_SET)
+    #else
+        fseeko(f, 0, SEEK_END)
+        length = ftello(f)
+        fseeko(f, 0, SEEK_SET)
+    #end
+    
+    buffer = malloc(length + 1)
+    if buffer {
+        if fread(buffer, 1, length, f) != length, return null
+        buffer[length] = 0x00ub
+    }
+    *size = length
+    return buffer
+}

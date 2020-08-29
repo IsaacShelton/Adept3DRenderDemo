@@ -1,0 +1,87 @@
+
+TEXTURE_ALPHA      == 0x01
+TEXTURE_BLEND      == 0x02
+TEXTURE_REPEAT     == 0x04
+TEXTURE_MIPMAPPING == 0x08
+
+TEXTURE_ALPHA_BLEND        == TEXTURE_ALPHA | TEXTURE_BLEND
+TEXTURE_ALPHA_BLEND_REPEAT == TEXTURE_ALPHA | TEXTURE_BLEND | TEXTURE_REPEAT
+TEXTURE_DEFAULT_3D         == TEXTURE_ALPHA | TEXTURE_BLEND | TEXTURE_REPEAT | TEXTURE_MIPMAPPING
+
+struct Texture (id GLuint, width, height int) {
+    func destroy {
+        glDeleteTextures(1, &this.id)
+    }
+    
+    func bind {
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, this.id)
+    }
+    
+    func bind(gl_texturex int) {
+        glActiveTexture(gl_texturex)
+        glBindTexture(GL_TEXTURE_2D, this.id)
+    }
+}
+
+func texture(filename String, options uint) Texture {
+    f *ubyte = filename.cstr()
+    defer delete f
+    return texture(f, options)
+}
+
+func texture(filename *ubyte, options uint) Texture {
+    texture POD Texture
+    
+    comp int = undef
+    image *ubyte = undef
+    
+    if options & TEXTURE_ALPHA {
+        image = stbi_load(filename, &texture.width, &texture.height, &comp, STBI_rgb_alpha)
+    } else {
+        image = stbi_load(filename, &texture.width, &texture.height, &comp, STBI_rgb)
+    }
+    
+    if image == null {
+        fprintf(stderr, 'Texture: Failed to load image "%s"\n', filename)
+        return texture
+    }
+    
+    glGenTextures(1, &texture.id)
+    glBindTexture(GL_TEXTURE_2D, texture.id)
+    
+    if options & TEXTURE_REPEAT {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+    } else {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    }
+    
+    if options & TEXTURE_BLEND {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+    } else {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    }
+    
+    if options & TEXTURE_MIPMAPPING {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    }
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture.width, texture.height, 0, (options & TEXTURE_ALPHA) ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, image)
+    
+    if options & TEXTURE_MIPMAPPING {
+        // Anisotropic filtering always on for TEXTURE_MIPMAPPING
+        aniso float = 0.0f
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &aniso)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso)
+        
+        glGenerateMipmap(GL_TEXTURE_2D)
+    }
+    
+    stbi_image_free(image)
+    return texture
+}

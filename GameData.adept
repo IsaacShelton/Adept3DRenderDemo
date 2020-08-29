@@ -1,0 +1,15 @@
+
+struct GameData (
+    projection, view, transformation Matrix4f,
+    window *GLFWwindow,
+    width, height int,
+    shader Shader,
+    model Model,
+    camera_position Vector3f
+)
+
+struct Textures (
+    bricks_diffuse,
+    bricks_normal Texture
+)
+

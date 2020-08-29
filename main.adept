@@ -1,0 +1,77 @@
+
+#default fullscreen   false
+#default antialiasing true
+
+import '2.3/basics.adept'
+import '2.3/Array.adept'
+import '2.3/List.adept'
+import '2.3/where.adept'
+import 'glfw/glfw.adept'
+import 'opengl/opengl.adept'
+import 'stb/image.adept'
+import 'tinyobj/tinyobj.adept'
+
+WINDOW_TITLE == 'Adept3DRenderer'
+
+import '2.3/Vector2f.adept'
+import '2.3/Vector3f.adept'
+import '2.3/Matrix4f.adept'
+
+import 'EBO.adept'
+import 'Model.adept'
+import 'Shader.adept'
+import 'Texture.adept'
+import 'VAO.adept'
+import 'VBO.adept'
+
+import 'GameData.adept'
+import 'game.adept'
+
+func main {
+    unless glfwInit() {
+        print("Failed to init")
+        return
+    }
+    
+    #if __macos__
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3)
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2)
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE)
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE)
+    #end
+    
+    #if antialiasing
+    glfwWindowHint(GLFW_SAMPLES, 4)
+    #end
+    
+    #if fullscreen
+    monitor *GLFWmonitor = glfwGetPrimaryMonitor()
+    vidmode *GLFWvidmode = glfwGetVideoMode(monitor)
+    window *GLFWwindow = glfwCreateWindow(vidmode.width, vidmode.height, WINDOW_TITLE, monitor, null)
+    #else
+    window *GLFWwindow = glfwCreateWindow(1280, 780, WINDOW_TITLE, null, null)
+    #end
+    
+    glfwMakeContextCurrent(window)
+    glfwSwapInterval(1)
+    openglInit()
+    
+    setup(window)
+    
+    until glfwWindowShouldClose(window) {
+        glClearColor(0.4f, 0.4f, 0.4f, 1.0f)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        
+        glfwGetFramebufferSize(window, &gamedata.width, &gamedata.height)
+        glViewport(0, 0, gamedata.width, gamedata.height)
+        
+        update()
+        render()
+        
+        glfwSwapBuffers(window)
+        glfwPollEvents()
+    }
+    
+    cleanup()
+    glfwTerminate()
+}

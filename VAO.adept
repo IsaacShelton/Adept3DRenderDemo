@@ -1,0 +1,56 @@
+
+struct VAO (id GLuint, vbos <VBO> List){
+    func destroy {
+        each VBO in this.vbos, it.destroy()
+        glDeleteVertexArrays(1, &this.id)
+    }
+    
+    func addVBO(vbo VBO) {
+        this.bind()
+        this.vbos.add(vbo)
+        vbo.bind()
+        glEnableVertexAttribArray(this.vbos.length - 1)
+        glVertexAttribPointer(this.vbos.length - 1, vbo.getVertexSize(), vbo.getElementType(), GL_FALSE, 0, null)
+        glDisableVertexAttribArray(this.vbos.length - 1)
+    }
+    
+    func getVBOCount usize {
+        return this.vbos.length
+    }
+    
+    func bind {
+        glBindVertexArray(this.id)
+    }
+    
+    func unbind {
+        glBindVertexArray(0)
+    }
+    
+    func enableAttribArrays {
+        repeat this.vbos.length, glEnableVertexAttribArray(idx)
+    }
+    
+    func disableAttribArrays {
+        repeat this.vbos.length, glDisableVertexAttribArray(idx)
+    }
+    
+    func __assign__(other POD VAO) {
+        fprintf(stderr, 'VAO WARNING: __assign__(*VAO, VAO) called!\n')
+        
+        this.id = other.id
+        this.vbos = other.vbos
+    }
+}
+
+func vao VAO {
+    vao POD VAO
+    glGenVertexArrays(1, &vao.id)
+    glBindVertexArray(vao.id)
+    return vao
+}
+
+func vao(id GLuint) VAO {
+    vao POD VAO
+    vao.id = id
+    return vao
+}

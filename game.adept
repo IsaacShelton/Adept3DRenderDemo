@@ -1,0 +1,77 @@
+
+import 'main.adept'
+
+gamedata GameData
+textures Textures
+
+func setup(window *GLFWwindow) {
+    assetsFolder String = where()
+    
+    textures.bricks_diffuse = texture(assetsFolder + "textures/bricks_diffuse.jpg", TEXTURE_DEFAULT_3D)
+    textures.bricks_normal = texture(assetsFolder + "textures/bricks_normal.jpg", TEXTURE_DEFAULT_3D)
+    
+    gamedata.window = window
+    gamedata.shader = shader(assetsFolder + "shaders/v.glsl", assetsFolder + "shaders/f.glsl")
+    gamedata.model = model("models/sphere.obj", null)
+    gamedata.camera_position.set(0.0f, 3.0f, 10.0f)
+    
+    glEnable(GL_DEPTH_TEST)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+    #if antialiasing
+        glEnable(GL_MULTISAMPLE)
+    #end
+    
+    glfwSetInputMode(gamedata.window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN)
+}
+
+func cleanup {
+    textures.bricks_diffuse.destroy()
+    gamedata.shader.destroy()
+    gamedata.model.destroy()
+}
+
+func update {
+    if glfwGetKey(gamedata.window, GLFW_KEY_W), gamedata.camera_position.z -= 0.1f
+    if glfwGetKey(gamedata.window, GLFW_KEY_S), gamedata.camera_position.z += 0.1f
+    
+    gamedata.projection.perspective(45.0f, cast float gamedata.width / cast float gamedata.height, 0.01f, 100.0f)
+    gamedata.view.translateFromIdentity(gamedata.camera_position.negated())
+    gamedata.transformation.identity()
+    gamedata.transformation.scale(4.0f, 4.0f, 4.0f)
+    gamedata.transformation.rotate(glfwGetTime() * 0.4, 1.0f, 0.0f, 0.0f)//0.1f, 0.5f, 0.8f)
+}
+
+func render {
+    gamedata.shader.bind()
+    gamedata.shader.giveMatrix4f('projection', gamedata.projection)
+    gamedata.shader.giveMatrix4f('view', gamedata.view)
+    gamedata.shader.giveMatrix4f('transformation', gamedata.transformation)
+    
+    inverse_transformation Matrix4f = gamedata.transformation
+    inverse_transformation.inverse()
+    gamedata.shader.giveMatrix4f('inverse_transformation', inverse_transformation)
+    gamedata.shader.giveVector3f('view_pos', gamedata.camera_position.negated())
+    
+    gamedata.shader.giveVector3f('material.ambient', vector3f(0.05f, 0.05f, 0.05f))
+    gamedata.shader.giveVector3f('material.diffuse', vector3f(0.5f, 0.0f, 0.0f))
+    gamedata.shader.giveVector3f('material.specular', vector3f(0.5f, 0.5f, 0.5f))
+    gamedata.shader.giveFloat('material.shininess', 0.6f * 128.0f)
+    gamedata.shader.giveInt('diffuse_map', 0)
+    gamedata.shader.giveInt('normal_map', 1)
+    gamedata.shader.giveBool('material.has_diffuse_map', true)
+    gamedata.shader.giveBool('material.has_normal_map', true)
+    
+    gamedata.shader.giveBool('point_lights[0].enabled', true)
+    gamedata.shader.giveVector3f('point_lights[0].position', vector3f(1.0f, 10.0f, 6.0f))
+    gamedata.shader.giveVector3f('point_lights[0].color',    vector3f(0.9f, 0.9f, 0.9f))
+    
+    gamedata.shader.giveBool('point_lights[1].enabled', false)
+    gamedata.shader.giveBool('point_lights[2].enabled', false)
+    gamedata.shader.giveBool('point_lights[3].enabled', false)
+    
+    textures.bricks_diffuse.bind(GL_TEXTURE0)
+    textures.bricks_normal.bind(GL_TEXTURE1)
+    gamedata.model.render()
+}

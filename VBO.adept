@@ -1,0 +1,52 @@
+
+enum VBOType (
+    VERTICES,
+    TEXTURE_COORDS,
+    NORMALS,
+    TANGENTS,
+    BITANGENTS,
+    OTHER
+)
+
+struct VBO (id GLuint, size usize, type VBOType) {
+    func destroy {
+        glDeleteBuffers(1, &this.id)
+    }
+    
+    func getElementType GLenum {
+        return GL_FLOAT
+    }
+    
+    func getVertexSize usize {
+        switch this.type {
+        case VBOType::VERTICES,       return 3
+        case VBOType::NORMALS,        return 3
+        case VBOType::TANGENTS,       return 3
+        case VBOType::BITANGENTS,     return 3
+        case VBOType::TEXTURE_COORDS, return 2
+        }
+        
+        fprintf(stderr, 'VBO INTERNAL ERROR: Unknown VBOType in getVertexSize()\n')
+        return 3
+    }
+    
+    func bind {
+        glBindBuffer(GL_ARRAY_BUFFER, this.id)
+    }
+    
+    func unbind {
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+    }
+}
+
+func vbo(type VBOType, data <float> Array) VBO {
+    vbo POD VBO
+    vbo.type = type
+    vbo.size = data.length
+    
+    glGenBuffers(1, &vbo.id)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo.id)
+    glBufferData(GL_ARRAY_BUFFER, vbo.size * sizeof float, data.items, GL_STATIC_DRAW)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    return vbo
+}

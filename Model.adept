@@ -1,0 +1,162 @@
+
+import 'main.adept'
+
+struct Model (vao VAO, ebo EBO, texture *Texture) {
+    func destroy {
+        this.vao.destroy()
+        this.ebo.destroy()
+        // Texture is not destroyed
+    }
+    
+    func render {
+        this.vao.bind()
+        this.vao.enableAttribArrays()
+        this.ebo.bind()
+        
+        if this.texture {
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_2D, this.texture.id)
+        }
+        
+        glDrawElements(GL_TRIANGLES, this.ebo.size, GL_UNSIGNED_INT, null)
+        
+        this.ebo.unbind()
+        this.vao.disableAttribArrays()
+        this.vao.unbind()
+    }
+}
+
+func model(vao POD VAO, ebo POD EBO, texture *Texture) Model {
+    model POD Model
+    model.vao = POD vao
+    model.ebo = POD ebo
+    model.texture = texture
+    return model
+}
+
+func model(filename String, texture *Texture) Model {
+    empty_model POD Model
+    
+    filename_cstr *ubyte = filename.cstr()
+    defer delete filename_cstr
+    
+    attrib tinyobj_attrib_t
+    shapes *tinyobj_shape_t = null
+    num_shapes usize = undef
+    materials *tinyobj_material_t = null
+    num_materials usize = undef
+    
+    data_len usize = 0
+    data *ubyte = getFileContentsAsNullTerminatedString(filename_cstr, &data_len)
+    if data == null, fprintf(stderr, 'model(String, *Texture) failed to read file "%s"\n', filename_cstr); return empty_model
+    defer delete data
+    
+    material_path_cstr *ubyte = null
+    defer delete material_path_cstr
+    
+    last_slash long = max(filename.last('/'ub), filename.last('\\'ub))
+    
+    if last_slash >= 0 {
+        material_path String = filename.range(0, last_slash + 1)
+        material_path_cstr = material_path.cstr()
+    }
+    
+    flags uint = TINYOBJ_FLAG_TRIANGULATE
+    ret int = tinyobj_parse_obj_ex(&attrib, &shapes, &num_shapes, &materials, &num_materials, data, data_len, flags, material_path_cstr)
+    if ret != TINYOBJ_SUCCESS, fprintf(stderr, 'model(String, *Texture) failed to load model "%s"\n', filename_cstr); return empty_model
+    
+    vertices <float> List
+    texture_coords <float> List
+    normals <float> List
+    indices <uint> List
+    tangents <float> List
+    
+    each tinyobj_vertex_index_t in [attrib.faces, attrib.num_faces] {
+        vertices.add(attrib.vertices[it.v_idx * 3 + 0])
+        vertices.add(attrib.vertices[it.v_idx * 3 + 1])
+        vertices.add(attrib.vertices[it.v_idx * 3 + 2])
+        
+        texture_coords.add(attrib.texcoords[it.vt_idx * 2 + 0])
+        texture_coords.add(attrib.texcoords[it.vt_idx * 2 + 1])
+        
+        normals.add(attrib.normals[it.vn_idx * 3 + 0])
+        normals.add(attrib.normals[it.vn_idx * 3 + 1])
+        normals.add(attrib.normals[it.vn_idx * 3 + 2])
+        
+        // Lazy indices
+        indices.add(indices.length as uint)
+    }
+    
+    tangents = computeTangents(vertices, texture_coords, normals, indices)
+    
+    vertices_vbo POD VBO = vbo(VBOType::VERTICES, array(vertices.items, vertices.length))
+    texture_coords_vbo POD VBO = vbo(VBOType::TEXTURE_COORDS, array(texture_coords.items, texture_coords.length))
+    normals_vbo POD VBO = vbo(VBOType::NORMALS, array(normals.items, normals.length))
+    tangents_vbo POD VBO = vbo(VBOType::TANGENTS, array(tangents.items, tangents.length))
+    
+    vao POD VAO = POD vao()
+    vao.addVBO(vertices_vbo)
+    vao.addVBO(texture_coords_vbo)
+    vao.addVBO(normals_vbo)
+    vao.addVBO(tangents_vbo)
+    
+    ebo POD EBO = ebo(array(indices.items, indices.length))
+    
+    defer tinyobj_attrib_free(&attrib)
+    defer tinyobj_shapes_free(shapes, num_shapes)
+    defer tinyobj_materials_free(materials, num_materials)
+    return model(vao, ebo, texture)
+}
+
+func computeTangents(vertices, uvs, normals <float> List, indices <uint> List) <float> List {
+    vertex_count usize = vertices.length / 3
+    
+    tan_a <Vector3f> List
+    repeat vertex_count, tan_a.add(vector3f(0.0f, 0.0f, 0.0f))
+    
+    i usize = 0; while i < indices.length {
+        i0 uint = indices.get(i)
+        i1 uint = indices.get(i + 1)
+        i2 uint = indices.get(i + 2)
+        
+        pos0 Vector3f = vector3f(vertices.get(i0 * 3 + 0), vertices.get(i0 * 3 + 1), vertices.get(i0 * 3 + 2))
+        pos1 Vector3f = vector3f(vertices.get(i1 * 3 + 0), vertices.get(i1 * 3 + 1), vertices.get(i1 * 3 + 2))
+        pos2 Vector3f = vector3f(vertices.get(i2 * 3 + 0), vertices.get(i2 * 3 + 1), vertices.get(i2 * 3 + 2))
+        
+        tex0 Vector2f = vector2f(uvs.get(i0 * 2 + 0), uvs.get(i0 * 2 + 1))
+        tex1 Vector2f = vector2f(uvs.get(i1 * 2 + 0), uvs.get(i1 * 2 + 1))
+        tex2 Vector2f = vector2f(uvs.get(i2 * 2 + 0), uvs.get(i2 * 2 + 1))
+        
+        edge1 Vector3f = pos1 - pos0
+        edge2 Vector3f = pos2 - pos0
+        
+        uv1 Vector2f = tex1 - tex0
+        uv2 Vector2f = tex2 - tex0
+        
+        r float = 1.0f / (uv1.x * uv2.y - uv1.y * uv2.x)
+        
+        tangent Vector3f = vector3f(
+            ((edge1.x * uv2.y) - (edge2.x * uv1.y)) * r,
+            ((edge1.y * uv2.y) - (edge2.y * uv1.y)) * r,
+            ((edge1.z * uv2.y) - (edge2.z * uv1.y)) * r)
+        
+        tan_a.getPointer(i0).add(tangent)
+        tan_a.getPointer(i1).add(tangent)
+        tan_a.getPointer(i2).add(tangent)
+        
+        i += 3
+    }
+    
+    result <float> List
+    repeat vertex_count {
+        n Vector3f = vector3f(normals.get(idx * 3), normals.get(idx * 3 + 1), normals.get(idx * 3 + 2))
+        t0 Vector3f = tan_a.get(idx)
+        t Vector3f = t0 - (n * n.dot(t0))
+        t.normalize()
+        result.add(t.x)
+        result.add(t.y)
+        result.add(t.z)
+    }
+    
+    return result
+}
